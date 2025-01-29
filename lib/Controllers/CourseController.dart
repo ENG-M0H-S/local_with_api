@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart' as dio;
 import 'package:get/get.dart';
 import '../APIServices/DynamicApiServices.dart';
@@ -19,6 +20,7 @@ class CourseController extends GetxController {
     super.onInit();
     getCourseList();
     syncLocalDataWithApi();
+
   }
 
   Future<void> getCourseList() async {
@@ -94,25 +96,69 @@ class CourseController extends GetxController {
     try {
       // جلب جميع الكورسات المحلية
       final localCourses = await _databaseHelper.getCourses();
-
+      var data;
+      dio.Options options = dio.Options(
+        headers: {'method': 'PUT', 'Content-Type': 'application/json'},
+      );
       for (var course in localCourses) {
         // التحقق مما إذا كان الكورس موجودًا بالفعل في الـ API
         final response = await _apiService.get("${baseAPIURLV1 + teachersAPI}${course.id}/");
 
-        if (response.statusCode == 200) {
-          // إذا كان الكورس موجودًا، قم بتحديثه في الـ API
-          await _apiService.put(
-            "${baseAPIURLV1 + teachersAPI}${course.id}$updateAPI /",
-            data: course.toJson(),
-          );
-        } else {
+        // if (response.statusCode == 200&&response.data!=null) {
+        //   // إذا كان الكورس موجودًا، قم بتحديثه في الـ API
+        // try{
+        //
+        //   // if (course.photo != null||course.photo!="") {
+        //   //   var file=File(course.photo.toString());
+        //   //   data = dio.FormData.fromMap({
+        //   //     "subject": course.subject,
+        //   //     "title": course.title,
+        //   //     "overview": course.overview,
+        //   //     "photo": dio.MultipartFile.fromFileSync(
+        //   //       file.path,
+        //   //       filename: file.path.split(Platform.pathSeparator).last,
+        //   //     ),
+        //   //   });
+        //   //   options = dio.Options(
+        //   //     headers: {'method': 'PUT', 'Content-Type': 'multipart/form-data'},
+        //   //   );
+        //   // } else {
+        //     data = dio.FormData.fromMap({
+        //       "subject": course.subject,
+        //       "title": course.title,
+        //       "overview": course.overview,
+        //     });
+        //  // }
+        //
+        //   final response = await _apiService.put(
+        //       '${baseAPIURLV1 + teachersAPI}${course.id}/$updateAPI/',
+        //       data: data,
+        //       options: options);
+        // }
+        //     catch(ex){
+        //   print(ex.toString());
+        //     }
+        // }
+        // else {
+        try {
+          data = dio.FormData.fromMap({
+            "subject": course.subject,
+            "title": course.title,
+            "overview": course.overview,
+          });
+          final res = await _apiService.post(
+              '${baseAPIURLV1 + teachersAPI}/$addAPI',
+              data: data,
+              options: options);
           // إذا لم يكن الكورس موجودًا، قم بإضافته إلى الـ API
-          await _apiService.post(
-            baseAPIURLV1 + teachersAPI + addAPI,
-            data: course.toJson(),
-          );
+          // await _apiService.post(
+          //   baseAPIURLV1 + teachersAPI + addAPI,
+          //   data: course.toJson(),
+          // );
+          //    }
+        }catch(e){
+          print(e.toString());
         }
-
         // حذف الكورس من قاعدة البيانات المحلية بعد المزامنة
         await _databaseHelper.deleteCourse(course.id);
       }
@@ -133,27 +179,26 @@ class CourseController extends GetxController {
     File? photo,
   }) async {
     var data;
-    dio.Options options =
-    dio.Options(headers: {'Content-Type': 'application/json'});
+    dio.Options options = dio.Options(headers: {'Content-Type': 'application/json'});
     try {
       isLoading(true);
 
-      // Add to local database first
+      // إضافة الكورس إلى قاعدة البيانات المحلية أولاً
       final newCourse = CourseModel(
-        id: DateTime.now().millisecondsSinceEpoch, // Temporary ID
+        id: DateTime.now().millisecondsSinceEpoch, // معرف مؤقت
         title: title,
         subject: subject,
         overview: overview,
         photo: photo?.path ?? '',
-        createdAt: DateTime.now().toIso8601String(), // Add current timestamp
+        createdAt: DateTime.now().toIso8601String(),
       );
       await _databaseHelper.insertCourse(newCourse);
 
-      // Check internet connectivity
+      // التحقق من الاتصال بالإنترنت
       final isConnected = await NetworkHelper.isNetworkAvailable();
 
       if (isConnected) {
-        // Sync with the API
+        // إذا كان الاتصال متاحًا، قم بإضافة الكورس إلى الـ API
         if (photo != null) {
           data = dio.FormData.fromMap({
             "subject": subject,
@@ -176,7 +221,6 @@ class CourseController extends GetxController {
         final response = await _apiService.post(baseAPIURLV1 + teachersAPI + addAPI,
             data: data, options: options);
         if (response.statusCode == 201) {
-          // Mark the course as synced in the local database
           Get.snackbar('Success', 'Course added successfully');
         } else {
           Get.snackbar('Error', response.data['error']);
